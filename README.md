@@ -1,1 +1,1 @@
-[Volume Merging using LVM in AWS](merge-volume-root-volume)
+[Volume Merging using LVM in AWS](docs-1.md)
