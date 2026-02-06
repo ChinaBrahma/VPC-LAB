@@ -32,6 +32,7 @@ Synchronize files:
 sudo rsync -axHAX --progress / /mnt/new_root/
 ```
 (Note: -x ensures rsync stays on the current filesystem, avoiding /proc, /sys, etc.)
+
 4. Phase 3: Chroot and Bootloader Configuration
 Update the cloned system to recognize the LVM path.
 Mount system API filesystems:
@@ -72,6 +73,7 @@ exit
 ```
 sudo reboot
 ```
+
 5. Phase 4: Merging Original Space
 Once the system has successfully booted from the LVM volume, reclaim the original disk space.
 Convert old partition to PV:
@@ -91,10 +93,15 @@ Resize the Filesystem:
 sudo resize2fs /dev/system_vg/root_lv
 ```
 6. Verification Commands
+   
 Use these to confirm the final state:
+
 lsblk: Verify / is mounted on the LVM mapper.
+
 pvs: Check that both disks are listed as Physical Volumes.
+
 vgs: Verify the Volume Group size reflects the sum of both disks.
+
 df -h /: Confirm the total usable space.
 
 
