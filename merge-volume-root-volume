@@ -1,0 +1,92 @@
+Technical Documentation: Root Partition Migration to LVM
+Date: February 6, 2026
+System: Ubuntu (AWS EC2)
+Objective: Migrate a standard root partition to LVM and merge a secondary EBS volume to create a single 17GB spanned logical volume.
+1. Initial State
+The system started with a standard partition layout:
+nvme0n1p1 (7G): Original OS root (Standard partition).
+nvme1n1 (10G): Empty secondary EBS volume.
+2. Phase 1: LVM Infrastructure Setup
+We initialized the secondary disk to host the new LVM structure.
+bash
+# Initialize the physical volume
+sudo pvcreate /dev/nvme1n1
+
+# Create the Volume Group
+sudo vgcreate data_vg /dev/nvme1n1
+
+# Create the Logical Volume for the new root
+sudo lvcreate -n root_lv -l 100%FREE data_vg
+
+# Format the new volume
+sudo mkfs.ext4 /dev/data_vg/root_lv
+Use code with caution.
+
+3. Phase 2: Live Data Migration
+We cloned the active system to the LVM volume using rsync.
+bash
+# Mount the new LVM volume
+sudo mkdir -p /mnt/new_root
+sudo mount /dev/data_vg/root_lv /mnt/new_root
+
+# Synchronize all system files
+# -a (archive), -x (one file system), -H (hard links), -A (ACLs), -X (xattrs)
+sudo rsync -axHAX --progress / /mnt/new_root/
+Use code with caution.
+
+4. Phase 3: Boot Configuration (The "Chroot" Phase)
+To make the new volume bootable, we updated the configuration within a virtual environment.
+Preparing the Chroot
+bash
+# Bind mount system directories
+for i in /dev /dev/pts /proc /sys /run; do sudo mount -B $i /mnt/new_root$i; done
+
+# Mount the existing boot partitions
+sudo mount /dev/nvme0n1p16 /mnt/new_root/boot
+sudo mount /dev/nvme0n1p15 /mnt/new_root/boot/efi
+
+# Enter the new system
+sudo chroot /mnt/new_root
+Use code with caution.
+
+Reconfiguring for LVM
+Update /etc/fstab: Replaced the original LABEL=cloudimg-rootfs with the new mapper path: /dev/mapper/data_vg-root_lv.
+Disable AWS Partition Pinning: Removed the file forcing a PARTUUID boot:
+rm /etc/default/grub.d/40-force-partuuid.cfg
+Apply Changes:
+bash
+update-initramfs -u
+update-grub
+grub-install /dev/nvme0n1
+exit
+sudo reboot
+Use code with caution.
+
+5. Phase 4: Merging the Original Disk
+After confirming the system booted from the LVM volume (/dev/mapper/data_vg-root_lv mounted on /), we absorbed the original 7GB disk.
+bash
+# Initialize the old partition as LVM
+# (Wiped the old ext4 signature when prompted)
+sudo pvcreate /dev/nvme0n1p1
+
+# Extend the Volume Group
+sudo vgextend data_vg /dev/nvme0n1p1
+
+# Extend the Logical Volume to use all newly added space
+sudo lvextend -l +100%FREE /dev/data_vg/root_lv
+
+# Expand the filesystem live
+sudo resize2fs /dev/data_vg/root_lv
+Use code with caution.
+
+6. Final State Verification
+The system now reflects a unified 17GB root filesystem spanning two physical devices.
+lsblk View:
+nvme1n1 (10G) → data_vg-root_lv (17G)
+nvme0n1p1 (7G) → data_vg-root_lv (17G)
+df -h / View:
+text
+Filesystem                   Size  Used Avail Use% Mounted on
+/dev/mapper/data_vg-root_lv   17G  1.8G   15G  12% /
+Use code with caution.
+
